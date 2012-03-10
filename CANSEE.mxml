@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:WindowedApplication xmlns:mx="http://www.adobe.com/2006/mxml" layout="absolute"
+	initialize="init()"  height="439">
+	
+<mx:Script><![CDATA[
+	import com.web2memo.text.Jcode;
+	import org.bytearray.smtp.mailer.SMTPMailer;
+	import org.bytearray.smtp.encoding.JPEGEncoder;
+	import org.bytearray.smtp.encoding.PNGEnc;
+	import org.bytearray.smtp.events.SMTPEvent;
+	import flash.utils.ByteArray;
+	import flash.display.BitmapData;
+	import flash.display.Bitmap;
+	import flash.events.*;
+	
+	// create the socket connection to any SMTP socket
+	// use your ISP SMTP
+	private var myMailer:SMTPMailer;
+	
+	// take the snapshot
+	private var myBitmap:BitmapData;
+
+	// encode as JPEG with quality 100
+	private var myEncoder:JPEGEncoder = new JPEGEncoder( 100 );
+
+	private var stream:URLStream;
+
+	private var delay:Timer;
+
+	private function smtpauth():void {
+		myMailer.authenticate ( pLogin.text, pPass.text );
+	}
+	private function startpolling():void {
+		delay = new Timer(10000);
+		delay.addEventListener(TimerEvent.TIMER,delayHandler);
+		delay.start();
+	}
+	private function stoppolling():void {
+		delay.removeEventListener(TimerEvent.TIMER,delayHandler);
+		delay.stop();
+		status_bar_txt.text = '';
+	}	
+	private function init():void {
+
+	}
+
+	public function delayHandler(evt:TimerEvent):void{
+		trace("event handler called.");
+		
+		var request:URLRequest = new URLRequest(target_url.text);
+		request.method = "GET";
+		
+		stream = new URLStream();
+		var loader:URLLoader = new URLLoader();
+		//configureListeners(loader);
+		configureListeners(stream);
+		
+        try {
+			//loader.load(request);
+			stream.load(request);
+		} catch (error:Error) {
+			trace("Unable to load requested document.");
+		}		
+	}
+
+	private function configureListeners(dispatcher:IEventDispatcher):void {
+		dispatcher.addEventListener(Event.COMPLETE, completeHandler);
+		//dispatcher.addEventListener(Event.OPEN, openHandler);
+		//dispatcher.addEventListener(ProgressEvent.PROGRESS, progressHandler);
+		//dispatcher.addEventListener(SecurityErrorEvent.SECURITY_ERROR, securityErrorHandler);
+		dispatcher.addEventListener(HTTPStatusEvent.HTTP_STATUS, httpStatusHandler);
+		dispatcher.addEventListener(IOErrorEvent.IO_ERROR, ioErrorHandler);
+	}
+
+    private function ioErrorHandler(event:IOErrorEvent):void {
+        trace("ioErrorHandler: " + event);
+        status_bar_txt.text = 'Oooops!!';
+        onClick();
+    }
+    private function httpStatusHandler(event:HTTPStatusEvent):void {
+        trace("httpStatusHandler: " + event.status);
+    }
+
+	private function completeHandler(event:Event):void {
+		// ByteArrayに読み込む
+		var bytes:ByteArray = new ByteArray();
+		stream.readBytes(bytes, 0, stream.bytesAvailable);
+		trace('bytes length:' + bytes.length);
+		
+		// ECU-JPをUTF-8に変換して読み取る
+		var jcd:Jcode = Jcode.getInstance();
+		var str:String = jcd.detectEncode(bytes);
+		trace('ENCODING: ' + str);
+		
+		var strUTF8:String = jcd.EUCtoUTF8(bytes);
+		trace('length: ' + strUTF8.length);
+		
+		//trace(strUTF8);		
+
+		trace(exp_response_str.text + ':' + strUTF8.indexOf(exp_response_str.text));
+		
+		if (strUTF8.indexOf(exp_response_str.text) == -1){
+			status_bar_txt.text = 'Oooops!! ' + exp_response_str.text + ' is not avilable. OTZ..';
+			//var ret:Boolean = onClick();
+			onClick();
+		}else{
+			var my_date:Date = new Date();
+			trace(my_date);
+			status_bar_txt.text = 'RESPONSE_OKOK!! ' + my_date;
+		}
+		
+	}
+    private function onClick():void{  
+	//private function onClick():Boolean{
+		// sends HTML email
+		//initialize
+		myMailer = new SMTPMailer (smtp_txt.text, 25);
+		// register events
+		myMailer.addEventListener(SMTPEvent.MAIL_SENT, onMailSent);
+		myMailer.addEventListener(SMTPEvent.MAIL_ERROR, onMailError);
+		myMailer.addEventListener(SMTPEvent.CONNECTED, onConnected);
+		myMailer.addEventListener(SMTPEvent.DISCONNECTED, onDisconnected);
+		myMailer.addEventListener(SMTPEvent.AUTHENTICATED, onAuthSuccess);
+		myMailer.addEventListener(SMTPEvent.BAD_SEQUENCE, onAuthFailed);
+		myMailer.sendHTMLMail ( pLogin.text, pPass.text, from_txt.text, to_txt.text, subject_txt.text, message_txt.text);
+		//myMailer.authenticate ( pLogin.text, pPass.text );
+		//return true;
+	}
+
+	private function onAuthFailed ( pEvt:SMTPEvent ):void{
+		status_txt.htmlText = "Authentication Error";
+	}
+
+	private function onAuthSuccess ( pEvt:SMTPEvent ):void{	
+		status_txt.htmlText = "Authentication OK !";	
+	}
+
+	private function onConnected ( pEvt:SMTPEvent ):void {
+		status_txt.htmlText = "Connected : \n\n" + pEvt.result.message;
+		status_txt.htmlText += "Code : \n\n" + pEvt.result.code;	
+	}
+
+	private function onMailSent ( pEvt:SMTPEvent ) :void{
+		// when data available, read it
+		status_txt.htmlText = "Mail sent :\n\n" + pEvt.result.message;
+		status_txt.htmlText += "Code : \n\n" + pEvt.result.code;
+	}
+
+	private function onMailError ( pEvt:SMTPEvent ):void {
+		status_txt.htmlText = "Error :\n\n" + pEvt.result.message;
+		status_txt.htmlText += "Code : \n\n" + pEvt.result.code;
+	}
+
+	private function onDisconnected ( pEvt:SMTPEvent ):void {
+		status_txt.htmlText = "User disconnected :\n\n" + pEvt.result.message;
+		status_txt.htmlText += "Code : \n\n" + pEvt.result.code;
+	}
+
+	private function socketErrorHandler ( pEvt:IOErrorEvent ):void{
+		// when data available, read it
+		status_txt.htmlText = "Connection error !";
+	}
+		
+]]></mx:Script>
+
+	<mx:Panel layout="absolute" left="10" right="10" bottom="10" top="10" title="CANSee." fontFamily="Arial" fontSize="12">
+		<mx:TextInput left="136" right="10" top="10" id="target_url">
+			<mx:text>http://***.***.**</mx:text>
+		</mx:TextInput>
+		<mx:TextInput right="10" left="136" top="40" text="更新しました" id="exp_response_str"/>
+		<mx:TextInput id="smtp_txt" text="***" left="136" top="100" width="208"/>
+		<mx:TextInput id="from_txt" text="***@***" left="136" top="130" width="208"/>
+		<mx:TextInput id="to_txt" text="***@***" left="136" top="160" width="208"/>
+		<mx:TextInput id="subject_txt" text="****" left="136" top="190"/>
+		<mx:TextInput id="message_txt" text="*****" left="136" right="10" top="70"/>
+		<mx:TextInput id="status_txt" left="352" right="10" top="100" bottom="73"/>
+		<mx:TextInput id="status_bar_txt" left="352" height="23" right="10" bottom="42"/>
+		<mx:Button label="send mail" id="send_btn" click="onClick()" top="314" left="136" width="92" height="24"/>
+		<mx:TextInput id="pLogin" text="****@****" left="136" top="220" width="208"/>
+		<mx:TextInput id="pPass" displayAsPassword="true" left="136" top="250" width="208"/>
+		<mx:Label x="10" y="102" text="smtp server" width="118"/>
+		<mx:Label x="10" y="72" text="message" width="118"/>
+		<mx:Label x="10" y="12" text="target url" width="118"/>
+		<mx:Label x="10" y="42" text="expected response" width="118"/>
+		<mx:Label x="10" y="132" text="sender address" width="118"/>
+		<mx:Label x="10" y="162" text="destination address" width="118"/>
+		<mx:Label x="10" y="192" text="subject" width="118"/>
+		<mx:Label x="10" y="222" text="smtp user" width="118"/>
+		<mx:Label x="10" y="252" text="smtp password" width="118"/>
+		<mx:Button label="auth mail" width="92" id="auth_btn" click="smtpauth()" left="136" top="282"/>
+		<mx:Button label="start polling" id="start_btn" click="startpolling()" top="282" left="236" width="108"/>
+		<mx:Button x="236" y="315" label="stop polling" width="108" id="stop_btn"  click="stoppolling()" />
+	</mx:Panel>
+
+
+
+</mx:WindowedApplication>
